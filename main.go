@@ -20,7 +20,7 @@ var (
 	includeFlag = flags.String(
 		"include",
 		"",
-		`specifies additional directories to copy into ./vendor/ which are not specified in ./vendor/modules.txt. Multiple directories can be included by comma separation e.g. -include:github.com/a/b/dir1,github.com/a/b/dir1/dir2`)
+		`when set, only the paths listed here are copied into ./vendor/; everything else from ./vendor/modules.txt is skipped. Multiple directories can be included by comma separation e.g. -include=github.com/a/b/dir1,github.com/a/b/dir1/dir2`)
 )
 
 type Mod struct {
@@ -59,7 +59,14 @@ func main() {
 		fmt.Println("Whoops, -copy argument is empty, nothing to copy.")
 		os.Exit(1)
 	}
-	additionalDirsToInclude := strings.Split(*includeFlag, ",")
+	var includeDirs []string
+	if s := strings.TrimSpace(*includeFlag); s != "" {
+		for _, dir := range strings.Split(s, ",") {
+			if dir = strings.TrimSpace(dir); dir != "" {
+				includeDirs = append(includeDirs, dir)
+			}
+		}
+	}
 
 	// Parse/process modules.txt file of pkgs
 	f, _ := os.Open(modtxtPath)
@@ -115,12 +122,6 @@ func main() {
 
 			// Build list of files to module path source to project vendor folder
 			mod.VendorList = buildModVendorList(copyPat, mod)
-			// Append directories we need to also include which may not be in vendor/modules.txt.
-			for _, dir := range additionalDirsToInclude {
-				if strings.HasPrefix(dir, mod.ImportPath) {
-					mod.Pkgs = append(mod.Pkgs, dir)
-				}
-			}
 
 			modules = append(modules, mod)
 
@@ -128,6 +129,21 @@ func main() {
 		}
 
 		mod.Pkgs = append(mod.Pkgs, line)
+	}
+
+	// When -include is set, restrict each module's pkg list to entries that
+	// fall under one of the included paths. Modules with no matching pkg are
+	// effectively skipped because their VendorList will be cleared.
+	if len(includeDirs) > 0 {
+		for _, mod := range modules {
+			var pkgs []string
+			for _, dir := range includeDirs {
+				if dir == mod.ImportPath || strings.HasPrefix(dir, mod.ImportPath+"/") {
+					pkgs = append(pkgs, dir)
+				}
+			}
+			mod.Pkgs = pkgs
+		}
 	}
 
 	// Filter out files not part of the mod.Pkgs
