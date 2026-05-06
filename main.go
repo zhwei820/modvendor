@@ -135,14 +135,21 @@ func main() {
 	// fall under one of the included paths. Modules with no matching pkg are
 	// effectively skipped because their VendorList will be cleared.
 	if len(includeDirs) > 0 {
+		matched := make(map[string]bool, len(includeDirs))
 		for _, mod := range modules {
 			var pkgs []string
 			for _, dir := range includeDirs {
 				if dir == mod.ImportPath || strings.HasPrefix(dir, mod.ImportPath+"/") {
 					pkgs = append(pkgs, dir)
+					matched[dir] = true
 				}
 			}
 			mod.Pkgs = pkgs
+		}
+		for _, dir := range includeDirs {
+			if !matched[dir] {
+				panic(fmt.Sprintf("include path %q does not match any module in vendor/modules.txt", dir))
+			}
 		}
 	}
 
